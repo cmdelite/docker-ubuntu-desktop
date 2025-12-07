@@ -25,41 +25,39 @@ RUN apt update -y && apt install --no-install-recommends -y \
     openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
-# SSH setup
+# SSH configuration (fixed syntax!)
 RUN mkdir -p /var/run/sshd && \
     echo 'root:admin123' | chpasswd && \
-    echo 'PermitRootLogin yes >> /etc/ssh/sshd_config && \
     sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     sed -i 's@session\s*required\s*pam_loginuid.so@session optional pam_loginuid.so@g' /etc/pam.d/sshd
 
-# Create elite user with sudo + password
+# Create elite user + sudo without password
 RUN useradd -m -s /bin/bash elite && \
-    echo "elite:elite123" | chpasswd && \
-    usermod -aG sudo elite && \
-    echo "elite ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+    echo 'elite:elite123' | chpasswd && \
+    echo 'elite ALL=(ALL) NOPASSWD: ALL' >> /etc/sudoers
 
-# Fix systemctl replacement for Python3
+# Fix systemctl replacement for Python 3
 RUN curl -fsSL https://raw.githubusercontent.com/gdraheim/docker-systemctl-replacement/master/files/docker/systemctl.py \
     -o /usr/local/bin/systemctl && \
     sed -i '1s|.*|#!/usr/bin/python3|' /usr/local/bin/systemctl && \
     chmod +x /usr/local/bin/systemctl
 
-# Repo tool + ccache 150GB
+# Repo tool + 150 GB ccache
 RUN mkdir -p /root/bin && \
     curl https://storage.googleapis.com/git-repo-downloads/repo > /root/bin/repo && \
     chmod a+x /root/bin/repo && \
     mkdir -p /ccache && ccache -M 150G
 
-# AOSP workspace
+# AOSP workspace owned by elite
 RUN mkdir -p /aosp && chown elite:elite /aosp /ccache
 
-# Expose ports
+# Expose everything you need
 EXPOSE 22 5901 6080
 
-# Final startup: SSH + VNC as elite + noVNC (silent openssl)
-CMD /usr/sbin/sshd -D & \
+# Final startup – everything starts reliably
+CMD /usr/sbin/sshd && \
     su - elite -c "vncserver -geometry 1280x720 -depth 24 -SecurityTypes None :1" && \
     openssl req -new -x509 -days 365 -nodes -subj "/C=US/ST=Cloud/L=Railway/O=Elite/CN=localhost" \
-        -keyout /self.pem -out /self.pem 2>/dev/null && \
+        -keyout /self.pem -out /self.pem >/dev/null 2>&1 && \
     websockify --web=/usr/share/novnc/ --cert=/self.pem 6080 localhost:5901 && \
     tail -f /dev/null
